@@ -27,11 +27,19 @@ start_time = time.time()
 s3 = boto3.client('s3', aws_access_key_id = AWS_ACCESS_KEY, aws_secret_access_key = AWS_SECRET_ACCESS_KEY)
 client = vimeo.VimeoClient(token = VIMEO_TOKEN, key = VIMEO_CLIENT_IDENTIFIER, secret = VIMEO_CLIENT_SECRET)
 
+def get_highest_quality_video_url(files):
+    if len(files) == 1:
+        return files[0]['link']
+    largest_file = [files[0]['size'], files[0]['link']]
+    for file in files:
+        if file['size'] > largest_file[0]:
+            largest_file = [file['size'], file['link']]
+    return largest_file
 
 def transfer_video(video):
    video_id = video['uri'].split('/')[-1]         
    video_name = video['name']
-   video_url = video['download'][0]['link']
+   video_size, video_url  = get_highest_quality_video_url(video['files'])
    ancestor_path = ['']
    parent_folder_name = ''
 
@@ -49,12 +57,14 @@ def transfer_video(video):
 
    # upload the content to S3 using a request stream
    r = requests.get(video_url, stream=True, timeout=3600)
+   # map metadata to our types in mimir
+   # create a file for that metadata and uplaod to the S3 bucket
    s3.upload_fileobj(r.raw, S3_BUCKET_NAME, OPTIONAL_PATH + full_path + video_name + '.mp4') 
 
 if __name__ == '__main__':
     response = client.get('/me/videos', params={"per_page":50})
     total_pages = response.json()['total'] // 50 + 1
-    videos = response.json()['data'] 
+    videos = response.json()['data']
 
     #parallelism
     with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
