@@ -36,13 +36,12 @@ client = vimeo.VimeoClient(
 
 
 def check_date(last_action_date_string):
-    date_format = "%Y-%m-%d"
-
+    date_format = "%Y-%m-%dT%H:%M:%S"
+    
     last_action_date = datetime.datetime.strptime(last_action_date_string, date_format)
-    previous_migration_date = datetime.datetime.strptime("2023-10-05", date_format)
+    previous_migration_date = datetime.datetime.strptime("2023-10-05T13:13:52", date_format)
 
     if last_action_date <= previous_migration_date:
-        print("Reached the end")
         quit()
 
 
@@ -50,9 +49,8 @@ def append_to_file(file_path, data):
     try:
         with open(file_path, "a") as file:
             file.write(data + "\n")
-        print("Data appended successfully.")
     except Exception as e:
-        print("An error occurred:", str(e))
+        pass
 
 
 def transfer_video(video):
@@ -62,7 +60,7 @@ def transfer_video(video):
     ancestor_path = [""]
     parent_folder_name = ""
 
-    check_date(video["last_user_action_event_date"].split("T")[0])
+    check_date(video["last_user_action_event_date"].split("+")[0])
 
     # generate Vimeo video full path
     # ancestor path is all the folders above up to the root, except the parent folder
@@ -76,19 +74,14 @@ def transfer_video(video):
                 ancestor_name = ancestor["name"]
                 ancestor_path.insert(0, ancestor_name)
     full_path = "/".join(ancestor_path) + parent_folder_name
-    path_string = " /" + OPTIONAL_PATH + full_path + video_name
+    path_string = "/" + OPTIONAL_PATH + full_path + video_name
     print(path_string)
-
-    append_to_file(f"parallelism-items-{datetime.now()}.json", path_string)
-
-
-#    with open(f"vimeo-items-{datetime.now()}.txt", "a") as myfile:
-#        myfile.write('/' + OPTIONAL_PATH + full_path + video_name)
 
 
 # upload the content to S3 using a request stream
-#    r = requests.get(video_url, stream=True, timeout=3600)
-#    s3.upload_fileobj(r.raw, S3_BUCKET_NAME, OPTIONAL_PATH + full_path + video_name + '.mp4')
+    r = requests.get(video_url, stream=True, timeout=3600)
+    s3.upload_fileobj(r.raw, S3_BUCKET_NAME, OPTIONAL_PATH + full_path + video_name + '.mp4')
+    append_to_file(f"items-transferred.json", f"{path_string}")
 
 if __name__ == "__main__":
     response = client.get(
@@ -102,7 +95,6 @@ if __name__ == "__main__":
     )
     total_pages = response.json()["total"] // 50 + 1
     videos = response.json()["data"]
-    append_to_file(f"Vic-object-{datetime.datetime.now()}.json", json.dumps(videos))
 
     # parallelism
     with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
@@ -126,7 +118,6 @@ if __name__ == "__main__":
                 videos.extend(future.result().json()["data"])
             except Exception as e:
                 append_to_file('error-data.json',json.dumps(future.result().json()))
-                print("this error here: ")
                 print(str(e))
         for video in videos:
             executor.submit(transfer_video, video)
